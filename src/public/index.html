@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRUD de Produtos com Imagens Locais</title>
+    <style>
+        .teste {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+
+        form button {
+            background-color: var(--primary-color);
+        }
+
+        form button:hover {
+            background-color: var(--secondary-color);
+        }
+
+        .product-card .actions .edit-btn {
+            background-color: var(--primary-color);
+        }
+
+        .product-card .actions .delete-btn {
+            background-color: var(--danger-color);
+        }
+
+        .message.success {
+            background-color: rgba(76, 201, 240, 0.2);
+            color: var(--dark-text);
+            border-color: var(--success-color);
+        }
+
+        .message.error {
+            background-color: rgba(239, 35, 60, 0.1);
+            color: var(--dark-text);
+            border-color: var(--danger-color);
+        }
+    </style>
+</head>
+
+
+<body>
+    <div class="teste">
+        <p>Gerenciador de Produtos</p>
+    </div>
+    <div class="container">
+
+
+
+
+        <div id="messageContainer"></div>
+
+
+        <h2>Criar/Atualizar Produto</h2>
+        <form id="productForm">
+            <input type="hidden" id="productId">
+            <label for="name">Nome do Produto:</label>
+            <input type="text" id="name" required>
+
+
+            <label for="description">Descrição:</label>
+            <textarea id="description"></textarea>
+
+
+            <label for="price">Preço:</label>
+            <input type="number" id="price" step="0.01" required>
+
+
+            <label for="image">Imagem do Produto:</label>
+            <input type="file" id="image" accept="image/*">
+            <div id="currentImageContainer" style="margin-top: 10px; display: none;">
+                <p>Imagem atual:</p>
+                <img id="currentProductImage" src="" alt="Imagem do Produto"
+                    style="max-width: 150px; max-height: 150px; display: block; margin-bottom: 5px;">
+                <input type="checkbox" id="removeImageCheckbox"> <label for="removeImageCheckbox">Remover imagem
+                    atual</label>
+            </div>
+
+
+
+
+            <button type="submit">Salvar Produto</button>
+            <button type="button" id="cancelEditBtn" style="background-color: #6c757d; display: none;">Cancelar
+                Edição</button>
+        </form>
+
+
+        <h2>Lista de Produtos</h2>
+        <div id="productList">
+        </div>
+    </div>
+
+
+    <script>
+        const productForm = document.getElementById('productForm');
+        const productIdInput = document.getElementById('productId');
+        const nameInput = document.getElementById('name');
+        const descriptionInput = document.getElementById('description');
+        const priceInput = document.getElementById('price');
+        const imageInput = document.getElementById('image');
+        const currentImageContainer = document.getElementById('currentImageContainer');
+        const currentProductImage = document.getElementById('currentProductImage');
+        const removeImageCheckbox = document.getElementById('removeImageCheckbox');
+        const productListDiv = document.getElementById('productList');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
+        const messageContainer = document.getElementById('messageContainer');
+
+
+        const API_URL = '/api/products';
+
+
+        function showMessage(type, text) {
+            messageContainer.innerHTML = `<div class="message ${type}">${text}</div>`;
+            setTimeout(() => {
+                messageContainer.innerHTML = '';
+            }, 5000);
+        }
+
+
+        async function fetchProducts() {
+            try {
+                const response = await fetch(API_URL);
+                const products = await response.json();
+                productListDiv.innerHTML = ''; // Limpa a lista existente
+
+
+                products.forEach(product => {
+                    const productCard = document.createElement('div');
+                    productCard.className = 'product-card';
+                    productCard.innerHTML = `
+                        ${product.image_url ? `<img src="${product.image_url}" alt="${product.name}">` : `<img src="https://via.placeholder.com/150?text=Sem+Imagem" alt="Sem Imagem">`}
+                        <div class="product-details">
+                            <h3>${product.name}</h3>
+                            <p>${product.description || 'Sem descrição.'}</p>
+                            <p><strong>R$ ${product.price}</strong></p>
+                            <div class="actions">
+                                <button class="edit-btn" onclick="editProduct(${product.id})">Editar</button>
+                                <button class="delete-btn" onclick="deleteProduct(${product.id})">Excluir</button>
+                            </div>
+                        </div>
+                    `;
+                    productListDiv.appendChild(productCard);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar produtos:', error);
+                showMessage('error', 'Erro ao carregar produtos.');
+            }
+        }
+
+
+        productForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+
+            const id = productIdInput.value;
+            const name = nameInput.value;
+            const description = descriptionInput.value;
+            const price = parseFloat(priceInput.value);
+            const imageFile = imageInput.files[0];
+            const removeImage = removeImageCheckbox.checked;
+
+
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('description', description);
+            formData.append('price', price);
+
+
+            if (imageFile) {
+                formData.append('imagemProduto', imageFile); // 'imagemProduto' deve corresponder ao nome do campo no multer
+            } else if (id && removeImage) {
+                // Se não há nova imagem e é uma edição, e removeImage está marcado
+                formData.append('removeImage', 'true');
+            } else if (id && currentProductImage.src && !currentProductImage.src.includes('placeholder.com')) {
+                // Se não há nova imagem e não removeu, mantém a URL existente para a lógica no backend
+                formData.append('currentImageUrl', currentProductImage.src.replace(window.location.origin, '')); // Envia o path relativo
+            }
+
+
+
+
+            let response;
+            try {
+                if (id) { // Edição
+                    response = await fetch(`${API_URL}/${id}`, {
+                        method: 'PUT',
+                        body: formData // FormData é usado para PUT com arquivos
+                    });
+                } else { // Criação
+                    response = await fetch(API_URL, {
+                        method: 'POST',
+                        body: formData
+                    });
+                }
+
+
+                if (response.ok) {
+                    showMessage('success', id ? 'Produto atualizado com sucesso!' : 'Produto criado com sucesso!');
+                    productForm.reset();
+                    productIdInput.value = '';
+                    currentImageContainer.style.display = 'none';
+                    cancelEditBtn.style.display = 'none';
+                    removeImageCheckbox.checked = false;
+                    fetchProducts();
+                } else {
+                    const errorData = await response.json();
+                    showMessage('error', errorData.message || 'Erro ao salvar produto.');
+                }
+            } catch (error) {
+                console.error('Erro ao enviar formulário:', error);
+                showMessage('error', 'Erro de conexão ao salvar produto.');
+            }
+        });
+
+
+        async function editProduct(id) {
+            try {
+                const response = await fetch(`${API_URL}/${id}`);
+                const product = await response.json();
+
+
+                if (product) {
+                    productIdInput.value = product.id;
+                    nameInput.value = product.name;
+                    descriptionInput.value = product.description;
+                    priceInput.value = product.price;
+
+
+                    if (product.image_url) {
+                        currentProductImage.src = product.image_url;
+                        currentImageContainer.style.display = 'block';
+                        removeImageCheckbox.checked = false;
+                    } else {
+                        currentImageContainer.style.display = 'none';
+                        currentProductImage.src = '';
+                    }
+
+
+                    cancelEditBtn.style.display = 'inline-block';
+                    window.scrollTo({ top: 0, behavior: 'smooth' }); // Volta ao topo do formulário
+                }
+            } catch (error) {
+                console.error('Erro ao buscar produto para edição:', error);
+                showMessage('error', 'Erro ao carregar produto para edição.');
+            }
+        }
+
+
+        cancelEditBtn.addEventListener('click', () => {
+            productForm.reset();
+            productIdInput.value = '';
+            currentImageContainer.style.display = 'none';
+            cancelEditBtn.style.display = 'none';
+            removeImageCheckbox.checked = false;
+        });
+
+
+        async function deleteProduct(id) {
+            if (!confirm('Tem certeza que deseja excluir este produto?')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${API_URL}/${id}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    showMessage('success', 'Produto excluído com sucesso!');
+                    fetchProducts();
+                } else {
+                    const errorData = await response.json();
+                    showMessage('error', errorData.message || 'Erro ao excluir produto.');
+                }
+            } catch (error) {
+                console.error('Erro ao excluir produto:', error);
+                showMessage('error', 'Erro de conexão ao excluir produto.');
+            }
+        }
+
+
+        // Carrega os produtos quando a página é carregada
+        document.addEventListener('DOMContentLoaded', fetchProducts);
+    </script>
+</body>
+
+
+</html>
